@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#1B1B19">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Inventario Vial</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root{
+    --asphalt:#1B1B19;
+    --asphalt-2:#232220;
+    --asphalt-3:#2D2C29;
+    --line-white:#F4F1EA;
+    --muted:#9A968D;
+    --orange:#E85D04;
+    --orange-dim:#B84A03;
+    --yellow:#FFC145;
+    --green:#3FAE6A;
+    --red:#D64545;
+    --radius:14px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0; background:var(--asphalt); color:var(--line-white);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overscroll-behavior-y:contain;}
+  body{padding-bottom:96px;}
+  h1,h2,h3{margin:0; font-weight:700;}
+  p{margin:0;}
+  button{font-family:inherit;}
+
+  header.appbar{
+    position:sticky; top:0; z-index:20;
+    background:var(--asphalt);
+    border-bottom:3px solid var(--orange);
+    padding:14px 16px calc(11px + env(safe-area-inset-top,0px)) 16px;
+    padding-top:calc(14px + env(safe-area-inset-top,0px));
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  header.appbar .title{display:flex; align-items:baseline; gap:8px;}
+  header.appbar h1{font-size:19px; letter-spacing:0.2px;}
+  header.appbar .sub{font-size:12px; color:var(--muted);}
+  .gps-dot{width:10px; height:10px; border-radius:50%; background:var(--muted); flex-shrink:0;
+    box-shadow:0 0 0 3px rgba(255,255,255,0.04);}
+  .gps-dot.ok{background:var(--green);}
+  .gps-dot.warn{background:var(--yellow);}
+  .gps-dot.bad{background:var(--red);}
+  .gps-wrap{display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted);}
+
+  main{max-width:520px; margin:0 auto; padding:16px;}
+
+  .banner{
+    background:var(--red); color:var(--line-white); padding:10px 14px; border-radius:10px;
+    font-size:13px; line-height:1.4; margin-bottom:14px; display:none;
+  }
+  .banner.show{display:block;}
+
+  .card{
+    background:var(--asphalt-2); border-radius:var(--radius); padding:16px; margin-bottom:14px;
+    border:1px solid rgba(255,255,255,0.05);
+  }
+
+  /* Hero: sign-panel style progresiva readout */
+  .sign-panel{
+    background:linear-gradient(180deg,#242320,#1E1D1B);
+    border:1px solid rgba(232,93,4,0.25);
+    border-radius:var(--radius);
+    padding:20px 18px 16px;
+    margin-bottom:14px;
+    text-align:center;
+  }
+  .sign-panel .label{
+    font-size:11px; letter-spacing:1.5px; color:var(--muted); margin-bottom:6px;
+  }
+  .sign-panel .prog{
+    font-family:'Courier New', ui-monospace, monospace;
+    font-variant-numeric:tabular-nums;
+    font-size:44px; font-weight:700; color:var(--orange);
+    letter-spacing:1px; line-height:1.05;
+  }
+  .sign-panel .prog.empty{color:var(--muted); font-size:22px; font-weight:500;}
+  .sign-panel .meta{
+    margin-top:10px; font-size:12.5px; color:var(--muted); display:flex; flex-wrap:wrap;
+    gap:6px 14px; justify-content:center;
+  }
+  .sign-panel .meta b{color:var(--line-white); font-weight:600;}
+
+  .activate-btn{
+    width:100%; padding:15px; border:none; border-radius:12px; background:var(--orange);
+    color:var(--asphalt); font-size:16px; font-weight:700; cursor:pointer; margin-bottom:14px;
+  }
+  .activate-btn:active{background:var(--orange-dim);}
+  .activate-btn:disabled{opacity:0.5;}
+
+  details.card summary{
+    list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between;
+    font-size:15px; font-weight:600;
+  }
+  details.card summary::-webkit-details-marker{display:none;}
+  details.card summary .chev{transition:transform 0.15s; color:var(--muted);}
+  details.card[open] summary .chev{transform:rotate(90deg);}
+  details.card .body{margin-top:14px;}
+
+  label.field-label{display:block; font-size:12.5px; color:var(--muted); margin-bottom:6px;}
+  input[type="file"]{
+    width:100%; font-size:13px; color:var(--line-white); background:var(--asphalt-3);
+    border:1px dashed rgba(255,255,255,0.15); border-radius:10px; padding:12px;
+  }
+  input[type="number"], input[type="text"]{
+    width:100%; padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.1);
+    background:var(--asphalt-3); color:var(--line-white); font-size:14px;
+  }
+  .field{margin-bottom:12px;}
+  .status-line{font-size:12.5px; color:var(--muted); margin-top:10px; line-height:1.5;}
+  .status-line.ok{color:var(--green);}
+  .status-line.bad{color:var(--red);}
+
+  .video-wrap{
+    position:relative; width:100%; aspect-ratio:3/4; background:#000; border-radius:12px;
+    overflow:hidden; margin-bottom:12px;
+  }
+  .video-wrap video{width:100%; height:100%; object-fit:cover; display:block;}
+  .video-placeholder{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    color:var(--muted); font-size:13px; text-align:center; padding:20px;
+  }
+  .cam-toggle{
+    position:absolute; top:10px; right:10px; background:rgba(0,0,0,0.55); color:var(--line-white);
+    border:none; border-radius:8px; padding:7px 11px; font-size:12px; cursor:pointer;
+  }
+
+  .shutter-row{display:flex; align-items:center; justify-content:center; gap:22px; margin-bottom:4px;}
+  .shutter-btn{
+    width:74px; height:74px; border-radius:50%; background:var(--orange); border:5px solid var(--line-white);
+    cursor:pointer;
+  }
+  .shutter-btn:active{background:var(--orange-dim);}
+  .shutter-btn:disabled{background:var(--asphalt-3); border-color:var(--muted); cursor:not-allowed;}
+  .shutter-hint{text-align:center; font-size:12px; color:var(--muted); margin-top:2px;}
+
+  .gallery-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;}
+  .gallery-head h2{font-size:15px;}
+  .gallery-grid{
+    display:grid; grid-template-columns:repeat(3,1fr); gap:8px;
+  }
+  .thumb{
+    position:relative; aspect-ratio:1/1; border-radius:8px; overflow:hidden; background:var(--asphalt-3);
+  }
+  .thumb img{width:100%; height:100%; object-fit:cover; display:block;}
+  .thumb .chip{
+    position:absolute; left:4px; bottom:4px; background:rgba(0,0,0,0.65); color:var(--orange);
+    font-family:'Courier New', ui-monospace, monospace; font-size:10px; padding:2px 5px; border-radius:4px;
+  }
+  .thumb .del{
+    position:absolute; top:4px; right:4px; width:22px; height:22px; border-radius:50%;
+    background:rgba(0,0,0,0.65); color:var(--line-white); border:none; font-size:13px; line-height:1;
+    cursor:pointer;
+  }
+  .empty-state{color:var(--muted); font-size:13px; text-align:center; padding:22px 10px;}
+
+  .bottombar{
+    position:fixed; left:0; right:0; bottom:0; z-index:20;
+    background:var(--asphalt); border-top:1px solid rgba(255,255,255,0.08);
+    padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px)) 16px;
+    display:flex; gap:10px;
+  }
+  .btn{
+    flex:1; padding:13px; border-radius:11px; border:none; font-size:14px; font-weight:700; cursor:pointer;
+  }
+  .btn.primary{background:var(--orange); color:var(--asphalt);}
+  .btn.primary:disabled{background:var(--asphalt-3); color:var(--muted);}
+  .btn.ghost{background:transparent; color:var(--muted); border:1px solid rgba(255,255,255,0.15); flex:0 0 auto; padding:13px 16px;}
+
+  .lightbox{
+    position:fixed; inset:0; background:rgba(0,0,0,0.92); z-index:50; display:none;
+    align-items:center; justify-content:center; flex-direction:column; padding:16px;
+  }
+  .lightbox.show{display:flex;}
+  .lightbox img{max-width:100%; max-height:72vh; border-radius:8px;}
+  .lightbox .lb-meta{color:var(--muted); font-size:12.5px; margin-top:12px; text-align:center; line-height:1.5;}
+  .lightbox .lb-actions{display:flex; gap:10px; margin-top:16px;}
+  .lightbox .lb-actions button, .lightbox .lb-actions a{
+    padding:10px 16px; border-radius:9px; border:none; font-size:13px; font-weight:600; cursor:pointer;
+    text-decoration:none; display:inline-block;
+  }
+  .lb-close{position:absolute; top:calc(16px + env(safe-area-inset-top,0px)); right:16px; background:rgba(255,255,255,0.1); color:var(--line-white); width:36px; height:36px; border-radius:50%; border:none; font-size:16px;}
+
+  a.download-link{background:var(--orange); color:var(--asphalt);}
+  button.delete-link{background:var(--asphalt-3); color:var(--red);}
+
+  ::placeholder{color:#6E6B65;}
+</style>
+</head>
+<body>
+
+<header class="appbar">
+  <div class="title">
+    <h1>Inventario Vial</h1>
+  </div>
+  <div class="gps-wrap"><span class="gps-dot" id="gpsDot"></span><span id="gpsLabel">GPS inactivo</span></div>
+</header>
+
+<main>
+
+  <div class="banner" id="insecureBanner">
+    Esta página no está en HTTPS. La cámara y el GPS no funcionarán hasta que la abras desde una
+    dirección <b>https://</b> (por ejemplo, publicada en GitHub Pages). Revisa el archivo LEEME.
+  </div>
+
+  <div class="banner" id="permBanner"></div>
+
+  <!-- Progresiva sign panel -->
+  <div class="sign-panel">
+    <div class="label">PROGRESIVA ACTUAL</div>
+    <div class="prog empty" id="progText">— — —</div>
+    <div class="meta" id="progMeta">Carga una ruta KMZ y activa el GPS</div>
+  </div>
+
+  <button class="activate-btn" id="activateBtn">Activar GPS y cámara</button>
+
+  <!-- Route loader -->
+  <details class="card" id="routeDetails" open>
+    <summary>Ruta / progresiva (KMZ)<span class="chev">›</span></summary>
+    <div class="body">
+      <div class="field">
+        <label class="field-label">Archivo KMZ o KML descargado de Google Earth</label>
+        <input type="file" id="kmzInput" accept=".kmz,.kml">
+      </div>
+      <div class="field">
+        <label class="field-label">Progresiva inicial (m) — solo si la ruta es una línea sin marcas de progresiva</label>
+        <input type="number" id="startOffset" value="0" step="1">
+      </div>
+      <div class="field">
+        <label class="field-label">Nombre del proyecto (para el nombre del archivo exportado)</label>
+        <input type="text" id="projectName" placeholder="Ej: Carretera PE-3S km 40-60">
+      </div>
+      <div class="status-line" id="routeStatus">Ningún archivo cargado todavía.</div>
+    </div>
+  </details>
+
+  <!-- Camera -->
+  <div class="card">
+    <div class="video-wrap" id="videoWrap">
+      <video id="video" autoplay muted playsinline></video>
+      <div class="video-placeholder" id="videoPlaceholder">La cámara se activará junto con el GPS</div>
+      <button class="cam-toggle" id="camToggle" style="display:none;">Detener</button>
+    </div>
+    <div class="shutter-row">
+      <button class="shutter-btn" id="shutterBtn" disabled></button>
+    </div>
+    <div class="shutter-hint" id="shutterHint">Activa la cámara para empezar a capturar</div>
+  </div>
+
+  <!-- Gallery -->
+  <div class="card">
+    <div class="gallery-head">
+      <h2 id="galleryTitle">Fotos capturadas (0)</h2>
+    </div>
+    <div class="gallery-grid" id="galleryGrid"></div>
+    <div class="empty-state" id="emptyState">Aún no has capturado fotos en esta sesión.</div>
+  </div>
+
+</main>
+
+<div class="bottombar">
+  <button class="btn primary" id="downloadAllBtn" disabled>Descargar todo (ZIP)</button>
+  <button class="btn ghost" id="clearBtn">Vaciar</button>
+</div>
+
+<div class="lightbox" id="lightbox">
+  <button class="lb-close" id="lbClose">✕</button>
+  <img id="lbImg" src="" alt="Foto">
+  <div class="lb-meta" id="lbMeta"></div>
+  <div class="lb-actions">
+    <a class="download-link" id="lbDownload" download>Descargar</a>
+    <button class="delete-link" id="lbDelete">Eliminar</button>
+  </div>
+</div>
+
+<canvas id="canvas" style="display:none;"></canvas>
+
+<script src="jszip.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
