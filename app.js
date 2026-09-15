@@ -444,65 +444,75 @@ function showPermError(e) {
 // =========================================================================
 shutterBtn.addEventListener('click', capturePhoto);
 
+function getOrientationAngle() {
+  if (screen.orientation && typeof screen.orientation.angle === 'number') {
+    return ((screen.orientation.angle % 360) + 360) % 360;
+  }
+  if (typeof window.orientation === 'number') {
+    return ((window.orientation % 360) + 360) % 360;
+  }
+  return 0;
+}
+
 function drawOverlay(ctx, w, h, data) {
-  // Recuadro reducido (antes 17% de alto) y fondo más claro (antes negro casi sólido)
-  const bandH = Math.round(h * 0.13);
+  // Recuadro al 70% de la altura anterior, y todo el texto centrado
+  const bandH = Math.round(h * 0.13 * 0.7);
   ctx.fillStyle = 'rgba(48,46,42,0.55)';
   ctx.fillRect(0, h - bandH, w, bandH);
 
-  const bigSize = Math.round(w * 0.050);
-  const smallSize = Math.round(w * 0.021);
-  const padX = Math.round(w * 0.035);
-  const padTop = Math.round(bandH * 0.18);
+  // Tamaños derivados del alto del recuadro (no del ancho de la imagen) para que
+  // las 3 líneas siempre quepan dentro del recuadro, sea cual sea la orientación.
+  const bigSize = Math.min(Math.round(bandH * 0.38), Math.round(w * 0.075));
+  const smallSize = Math.min(Math.round(bandH * 0.16), Math.round(w * 0.032));
+  const padTop = Math.round(bandH * 0.14);
+  const gap = Math.max(3, Math.round(bandH * 0.05));
+  const cx = w / 2;
 
   ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'center';
+
   ctx.fillStyle = '#E85D04';
   ctx.font = `bold ${bigSize}px 'Courier New', monospace`;
   const line1y = h - bandH + padTop + bigSize;
-  ctx.fillText(data.progText, padX, line1y);
+  ctx.fillText(data.progText, cx, line1y);
 
   // Solo coordenadas y fecha/hora — sin precisión GPS, sin desvío, sin nombre de archivo
   ctx.fillStyle = '#F4F1EA';
   ctx.font = `${smallSize}px sans-serif`;
-  const line2y = line1y + smallSize + 6;
-  ctx.fillText(`${data.lat.toFixed(6)}, ${data.lon.toFixed(6)}`, padX, line2y);
+  const line2y = line1y + smallSize + gap;
+  ctx.fillText(`${data.lat.toFixed(6)}, ${data.lon.toFixed(6)}`, cx, line2y);
 
-  const line3y = line2y + smallSize + 5;
-  ctx.fillText(data.timestamp, padX, line3y);
+  const line3y = line2y + smallSize + gap;
+  ctx.fillText(data.timestamp, cx, line3y);
 }
 
 async function capturePhoto() {
   if (!stream) return;
   shutterBtn.disabled = true;
   try {
-    let bitmap = null;
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (!vw || !vh) { shutterBtn.disabled = false; return; }
 
-    // Método preferido: captura fotográfica nativa del teléfono. A diferencia de
-    // dibujar el <video> en el canvas (que puede guardar el frame crudo del sensor
-    // sin la rotación real del teléfono), esto usa el mismo pipeline que la app de
-    // Cámara del celular y respeta la orientación real vía EXIF — corrige el bug de
-    // fotos giradas y de paso entrega mayor resolución.
-    const track = stream.getVideoTracks()[0];
-    if (window.ImageCapture && track) {
-      try {
-        const imageCapture = new ImageCapture(track);
-        const blob = await imageCapture.takePhoto();
-        bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image' });
-      } catch (e) {
-        bitmap = null; // este dispositivo no lo soporta bien: usamos el método alterno
-      }
-    }
+    // Corrección de orientación calculada a mano: el frame crudo que entrega la
+    // cámara trasera no cambia según cómo sostengas el teléfono (eso solo lo hace
+    // la vista previa en pantalla). Usamos el ángulo real de la pantalla para
+    // rotar el frame nosotros mismos antes de guardarlo, en vez de confiar en que
+    // el navegador/teléfono lo etiquete bien (en tu equipo no lo estaba haciendo).
+    const angle = getOrientationAngle();
+    const rotation = (90 - angle + 360) % 360; // cámara trasera, sensor típico a 90°
 
     let w, h;
-    if (bitmap) { w = bitmap.width; h = bitmap.height; }
-    else { w = video.videoWidth; h = video.videoHeight; }
-    if (!w || !h) { shutterBtn.disabled = false; return; }
+    if (rotation === 90 || rotation === 270) { w = vh; h = vw; }
+    else { w = vw; h = vh; }
 
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext('2d');
-    if (bitmap) ctx.drawImage(bitmap, 0, 0, w, h);
-    else ctx.drawImage(video, 0, 0, w, h);
+    ctx.save();
+    ctx.translate(w / 2, h / 2);
+    ctx.rotate((rotation * Math.PI) / 180);
+    ctx.drawImage(video, -vw / 2, -vh / 2, vw, vh);
+    ctx.restore();
 
     const now = new Date();
     const timestamp = now.toLocaleString('es-PE', { hour12: false });

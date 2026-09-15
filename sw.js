@@ -1,4 +1,4 @@
-const CACHE_NAME = 'inventario-vial-v2';
+const CACHE_NAME = 'inventario-vial-v3';
 const APP_SHELL = [
   './',
   './index.html',
