@@ -1,4 +1,4 @@
-const CACHE_NAME = 'inventario-vial-v1';
+const CACHE_NAME = 'inventario-vial-v2';
 const APP_SHELL = [
   './',
   './index.html',
@@ -23,13 +23,20 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Cache-first para el shell de la app; el resto va directo a la red.
+// Network-first: siempre intenta traer la versión más nueva del servidor y
+// actualiza el caché con ella. Si no hay conexión, recién ahí usa el caché.
+// (Antes era 'cache-first', lo que hacía que las actualizaciones subidas a
+// GitHub Pages nunca se reflejaran en el celular una vez que la app había
+// cacheado la primera versión — ese era el bug.)
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).catch(() => cached);
-    })
+    fetch(event.request, { cache: 'no-cache' })
+      .then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy)).catch(() => {});
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
