@@ -392,7 +392,7 @@ async function startCameraStream() {
   camToggle.style.display = 'block';
   camToggle.textContent = 'Detener';
   shutterBtn.disabled = false;
-  shutterHint.textContent = 'Toca el botón para capturar una foto';
+  shutterHint.textContent = 'Sostén el celular en horizontal · toca para capturar';
 }
 
 function stopCameraStream() {
@@ -445,74 +445,106 @@ function showPermError(e) {
 shutterBtn.addEventListener('click', capturePhoto);
 
 function drawOverlay(ctx, w, h, data) {
-  const bandH = Math.round(h * 0.17);
-  ctx.fillStyle = 'rgba(0,0,0,0.58)';
+  // Recuadro reducido (antes 17% de alto) y fondo más claro (antes negro casi sólido)
+  const bandH = Math.round(h * 0.13);
+  ctx.fillStyle = 'rgba(48,46,42,0.55)';
   ctx.fillRect(0, h - bandH, w, bandH);
 
-  const bigSize = Math.round(w * 0.062);
-  const smallSize = Math.round(w * 0.026);
+  const bigSize = Math.round(w * 0.050);
+  const smallSize = Math.round(w * 0.021);
   const padX = Math.round(w * 0.035);
+  const padTop = Math.round(bandH * 0.18);
 
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = '#E85D04';
   ctx.font = `bold ${bigSize}px 'Courier New', monospace`;
-  ctx.fillText(data.progText, padX, h - bandH + bigSize + Math.round(bandH * 0.10));
+  const line1y = h - bandH + padTop + bigSize;
+  ctx.fillText(data.progText, padX, line1y);
 
+  // Solo coordenadas y fecha/hora — sin precisión GPS, sin desvío, sin nombre de archivo
   ctx.fillStyle = '#F4F1EA';
   ctx.font = `${smallSize}px sans-serif`;
-  const line2y = h - bandH + bigSize + Math.round(bandH * 0.10) + smallSize + 8;
-  ctx.fillText(`${data.lat.toFixed(6)}, ${data.lon.toFixed(6)}  ·  ±${Math.round(data.accuracy)} m GPS  ·  desvío ${Math.round(data.desvio)} m`, padX, line2y);
+  const line2y = line1y + smallSize + 6;
+  ctx.fillText(`${data.lat.toFixed(6)}, ${data.lon.toFixed(6)}`, padX, line2y);
 
-  const line3y = line2y + smallSize + 6;
-  ctx.fillText(`${data.projectName}  ·  ${data.timestamp}`, padX, line3y);
+  const line3y = line2y + smallSize + 5;
+  ctx.fillText(data.timestamp, padX, line3y);
 }
 
-function capturePhoto() {
+async function capturePhoto() {
   if (!stream) return;
-  const w = video.videoWidth, h = video.videoHeight;
-  if (!w || !h) return;
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, w, h);
+  shutterBtn.disabled = true;
+  try {
+    let bitmap = null;
 
-  const now = new Date();
-  const timestamp = now.toLocaleString('es-PE', { hour12: false });
-
-  let progMeters = null, progTextStr = 'Sin ubicación', lat = null, lon = null, accuracy = null, desvio = null;
-  if (currentPosition) {
-    lat = currentPosition.lat; lon = currentPosition.lon; accuracy = currentPosition.accuracy;
-    if (routeLoaded) {
-      const ch = computeChainage(lat, lon);
-      if (ch) { progMeters = ch.prog; progTextStr = formatProgresiva(ch.prog); desvio = ch.desvio; }
-    } else {
-      progTextStr = 'Sin ruta';
+    // Método preferido: captura fotográfica nativa del teléfono. A diferencia de
+    // dibujar el <video> en el canvas (que puede guardar el frame crudo del sensor
+    // sin la rotación real del teléfono), esto usa el mismo pipeline que la app de
+    // Cámara del celular y respeta la orientación real vía EXIF — corrige el bug de
+    // fotos giradas y de paso entrega mayor resolución.
+    const track = stream.getVideoTracks()[0];
+    if (window.ImageCapture && track) {
+      try {
+        const imageCapture = new ImageCapture(track);
+        const blob = await imageCapture.takePhoto();
+        bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+      } catch (e) {
+        bitmap = null; // este dispositivo no lo soporta bien: usamos el método alterno
+      }
     }
+
+    let w, h;
+    if (bitmap) { w = bitmap.width; h = bitmap.height; }
+    else { w = video.videoWidth; h = video.videoHeight; }
+    if (!w || !h) { shutterBtn.disabled = false; return; }
+
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (bitmap) ctx.drawImage(bitmap, 0, 0, w, h);
+    else ctx.drawImage(video, 0, 0, w, h);
+
+    const now = new Date();
+    const timestamp = now.toLocaleString('es-PE', { hour12: false });
+
+    let progMeters = null, progTextStr = 'Sin ubicación', lat = null, lon = null, accuracy = null, desvio = null;
+    if (currentPosition) {
+      lat = currentPosition.lat; lon = currentPosition.lon; accuracy = currentPosition.accuracy;
+      if (routeLoaded) {
+        const ch = computeChainage(lat, lon);
+        if (ch) { progMeters = ch.prog; progTextStr = formatProgresiva(ch.prog); desvio = ch.desvio; }
+      } else {
+        progTextStr = 'Sin ruta';
+      }
+    }
+
+    // accuracy y desvio se siguen guardando (van en el CSV/KML exportado), solo ya
+    // no se imprimen sobre la imagen
+    drawOverlay(ctx, w, h, {
+      progText: progTextStr,
+      lat: lat ?? 0,
+      lon: lon ?? 0,
+      timestamp,
+    });
+
+    canvas.toBlob(async (blob) => {
+      const id = photoCounter++;
+      const record = {
+        id, blob,
+        progText: progTextStr, progMeters,
+        lat, lon, accuracy, desvio,
+        timestamp: now.toISOString(),
+      };
+      photos.push({ ...record, url: URL.createObjectURL(blob) });
+      dbPut(record).catch(() => {});
+      renderGallery();
+      flashShutter();
+      shutterBtn.disabled = false;
+    }, 'image/jpeg', 0.92);
+  } catch (e) {
+    console.error('Error al capturar la foto:', e);
+    shutterBtn.disabled = false;
   }
-
-  drawOverlay(ctx, w, h, {
-    progText: progTextStr,
-    lat: lat ?? 0,
-    lon: lon ?? 0,
-    accuracy: accuracy ?? 0,
-    desvio: desvio ?? 0,
-    projectName: projectNameInput.value.trim() || 'Inventario Vial',
-    timestamp,
-  });
-
-  canvas.toBlob(async (blob) => {
-    const id = photoCounter++;
-    const record = {
-      id, blob,
-      progText: progTextStr, progMeters,
-      lat, lon, accuracy, desvio,
-      timestamp: now.toISOString(),
-    };
-    photos.push({ ...record, url: URL.createObjectURL(blob) });
-    dbPut(record).catch(() => {});
-    renderGallery();
-    flashShutter();
-  }, 'image/jpeg', 0.92);
 }
 
 function flashShutter() {
